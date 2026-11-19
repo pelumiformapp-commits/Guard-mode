@@ -12,6 +12,8 @@ button{background:#2e7d32;color:#fff}
 #status{font-size:24px;margin:12px}
 video{width:120px;border-radius:8px}
 img{width:140px;margin:4px;border-radius:8px}
+.alarm{animation:flash .4s infinite alternate}
+@keyframes flash{from{background:#111}to{background:#b00020}}
 </style>
 </head>
 <body>
@@ -153,24 +155,28 @@ function photo() {
 function trigger() {
   if (siren) return;
   say('INTRUDER!');
+  document.body.classList.add('alarm');
   photo();
   setTimeout(photo, 2000);
   const o = ctx.createOscillator();
-  o.type = 'square';
+  o.type = 'sawtooth';
   o.connect(ctx.destination);
   o.start();
-  let hi = false;
+  let f = 600, up = true, c = 0;
   const iv = setInterval(() => {
-    hi = !hi;
-    o.frequency.value = hi ? 1200 : 700;
-    if (navigator.vibrate) navigator.vibrate(250);
-  }, 300);
+    f += up ? 50 : -50;
+    if (f >= 1400) up = false;
+    if (f <= 600) up = true;
+    o.frequency.value = f;
+    if (++c % 8 === 0 && navigator.vibrate) navigator.vibrate(300);
+  }, 30);
   siren = { o, iv };
 }
 
 $('dis').onclick = () => {
   if ($('pin').value !== PIN) { say('Wrong PIN'); return; }
   armed = false;
+  document.body.classList.remove('alarm');
   if (siren) { siren.o.stop(); clearInterval(siren.iv); siren = null; }
   if (navigator.vibrate) navigator.vibrate(0);
   if (wl) { wl.release(); wl = null; }
