@@ -12,6 +12,7 @@ button{background:#2e7d32;color:#fff}
 #status{font-size:24px;margin:12px}
 video{width:120px;border-radius:8px}
 img{width:140px;margin:4px;border-radius:8px}
+.cell{display:inline-block;font-size:12px}
 .alarm{animation:flash .4s infinite alternate}
 @keyframes flash{from{background:#111}to{background:#b00020}}
 </style>
@@ -25,19 +26,44 @@ img{width:140px;margin:4px;border-radius:8px}
 <input id="pin" type="password" placeholder="PIN" inputmode="numeric">
 <button id="dis" style="background:#c62828">DISARM</button>
 <h3>Intruder photos</h3>
+<button id="clear" style="background:#555;font-size:14px">Clear photos</button>
 <div id="photos"></div>
 
 <script>
 const PIN = "1234";      // change this
-const THRESHOLD = 2;     // lower = more sensitive
+const THRESHOLD = 4;     // lower = more sensitive
+const MAX_PHOTOS = 20;
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/';
 
 let armed = false, siren = null, ctx = null, wl = null, last = null, stream = null;
 let modelsReady = false, checking = false, ownerUntil = 0;
 let owner = JSON.parse(localStorage.getItem('owner') || 'null');
+let photos = JSON.parse(localStorage.getItem('photos') || '[]');
 const $ = id => document.getElementById(id);
 const say = t => $('status').textContent = t;
 const wait = ms => new Promise(r => setTimeout(r, ms));
+
+function showPhotos() {
+  const box = $('photos');
+  box.innerHTML = '';
+  photos.forEach(p => {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    const img = new Image();
+    img.src = p.img;
+    const t = document.createElement('div');
+    t.textContent = p.time;
+    cell.append(img, t);
+    box.append(cell);
+  });
+}
+showPhotos();
+
+$('clear').onclick = () => {
+  photos = [];
+  localStorage.removeItem('photos');
+  showPhotos();
+};
 
 async function keepAwake() {
   try { wl = await navigator.wakeLock.request('screen'); } catch (e) {}
@@ -145,11 +171,14 @@ function photo() {
   const v = $('v');
   if (!v.videoWidth) return;
   const c = document.createElement('canvas');
-  c.width = v.videoWidth; c.height = v.videoHeight;
-  c.getContext('2d').drawImage(v, 0, 0);
-  const img = new Image();
-  img.src = c.toDataURL('image/jpeg', 0.7);
-  $('photos').prepend(img);
+  const s = 320 / v.videoWidth;
+  c.width = 320;
+  c.height = Math.round(v.videoHeight * s);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  photos.unshift({ img: c.toDataURL('image/jpeg', 0.6), time: new Date().toLocaleString() });
+  photos = photos.slice(0, MAX_PHOTOS);
+  try { localStorage.setItem('photos', JSON.stringify(photos)); } catch (e) {}
+  showPhotos();
 }
 
 function trigger() {
