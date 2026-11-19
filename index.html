@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guard Mode</title>
+<style>
+body{font-family:sans-serif;background:#111;color:#fff;text-align:center;padding:16px}
+button,input{font-size:18px;padding:12px;margin:6px;border-radius:8px;border:0}
+button{background:#2e7d32;color:#fff}
+#status{font-size:24px;margin:12px}
+video{width:120px;border-radius:8px}
+img{width:140px;margin:4px;border-radius:8px}
+</style>
+</head>
+<body>
+<h2>Guard Mode</h2>
+<div id="status">Disarmed</div>
+<video id="v" autoplay muted playsinline></video><br>
+<button id="arm">ARM (10s delay)</button><br>
+<input id="pin" type="password" placeholder="PIN" inputmode="numeric">
+<button id="dis" style="background:#c62828">DISARM</button>
+<h3>Intruder photos</h3>
+<div id="photos"></div>
+
+<script>
+const PIN = "1234";      // change this
+const THRESHOLD = 4;     // lower = more sensitive
+
+let armed = false, siren = null, ctx = null, wl = null, last = null, stream = null;
+const $ = id => document.getElementById(id);
+const say = t => $('status').textContent = t;
+
+async function keepAwake() {
+  try { wl = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (armed && document.visibilityState === 'visible') keepAwake();
+});
+
+$('arm').onclick = async () => {
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    $('v').srcObject = stream;
+  } catch (e) { say('Allow the camera first'); return; }
+  if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission) {
+    await DeviceMotionEvent.requestPermission();
+  }
+  await keepAwake();
+  let n = 10;
+  say('Arming in ' + n + 's...');
+  const t = setInterval(() => {
+    n--;
+    if (n <= 0) { clearInterval(t); armed = true; last = null; say('ARMED'); }
+    else say('Arming in ' + n + 's...');
+  }, 1000);
+};
+
+window.addEventListener('devicemotion', e => {
+  if (!armed) return;
+  const a = e.accelerationIncludingGravity;
+  if (!a) return;
+  const m = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  if (last !== null && Math.abs(m - last) > THRESHOLD) trigger();
+  last = m;
+});
+
+function photo() {
+  const v = $('v');
+  if (!v.videoWidth) return;
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  const img = new Image();
+  img.src = c.toDataURL('image/jpeg', 0.7);
+  $('photos').prepend(img);
+}
+
+function trigger() {
+  if (siren) return;
+  say('INTRUDER!');
+  photo();
+  setTimeout(photo, 2000);
+  const o = ctx.createOscillator();
+  o.type = 'square';
+  o.connect(ctx.destination);
+  o.start();
+  let hi = false;
+  const iv = setInterval(() => {
+    hi = !hi;
+    o.frequency.value = hi ? 1200 : 700;
+    if (navigator.vibrate) navigator.vibrate(250);
+  }, 300);
+  siren = { o, iv };
+}
+
+$('dis').onclick = () => {
+  if ($('pin').value !== PIN) { say('Wrong PIN'); return; }
+  armed = false;
+  if (siren) { siren.o.stop(); clearInterval(siren.iv); siren = null; }
+  if (navigator.vibrate) navigator.vibrate(0);
+  if (wl) { wl.release(); wl = null; }
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  $('pin').value = '';
+  say('Disarmed');
+};
+</script>
+</body>
+</html>
